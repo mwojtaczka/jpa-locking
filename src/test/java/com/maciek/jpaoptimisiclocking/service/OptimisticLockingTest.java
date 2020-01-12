@@ -82,7 +82,7 @@ class OptimisticLockingTest {
                         () -> slowService.transferAllFundsFromOneToAnother_optimisticLocking(1, 2))
         );
         final CompletableFuture<Void> quickFuture = runAsync(() -> quickService.depositWithOptimisticLocking(1, valueOf(30)));
-        CompletableFuture.allOf(quickFuture).get();
+        CompletableFuture.allOf(slowFuture, quickFuture).get();
         final AccountWithVersion creditor = myRepositoryOptimisticLocking.findById_optimisticLocking(1L).orElseThrow();
         final AccountWithVersion debtor = myRepositoryOptimisticLocking.findById_optimisticLocking(2L).orElseThrow();
 
@@ -91,24 +91,21 @@ class OptimisticLockingTest {
     }
 
     @Test
-    @DisplayName("should rollback money transfer transaction " +
-            "when other thread updated the balance even if didn't commit")
-    void shouldRollbackMoneyTransferTransaction_whenOtherThreadUpdatedBalanceEvenIfNotCommitted() throws ExecutionException, InterruptedException {
+    @DisplayName("should transfer money when other thread updated the balance but fails and didn't commit")
+    void shouldTransferMoney_whenOtherThreadUpdatedBalanceButFails() throws ExecutionException, InterruptedException {
 
-        final CompletableFuture<ObjectOptimisticLockingFailureException> slowFuture = supplyAsync(() ->
-                assertThrows(ObjectOptimisticLockingFailureException.class,
-                        () -> slowService.transferAllFundsFromOneToAnother_optimisticLocking(1, 2))
-        );
+        final CompletableFuture<Void> slowFuture =
+                runAsync(() -> slowService.transferAllFundsFromOneToAnother_optimisticLocking(1, 2));
         final CompletableFuture<RuntimeException> quickFuture = supplyAsync(() ->
                 assertThrows(RuntimeException.class,
                         () -> quickService.depositWithOptimisticLocking_butFail(1, valueOf(30)))
         );
-        CompletableFuture.allOf(quickFuture).get();
+        CompletableFuture.allOf(slowFuture, quickFuture).get();
         final AccountWithVersion creditor = myRepositoryOptimisticLocking.findById_optimisticLocking(1L).orElseThrow();
         final AccountWithVersion debtor = myRepositoryOptimisticLocking.findById_optimisticLocking(2L).orElseThrow();
 
-        assertThat(creditor.getBalance()).usingComparator(BigDecimal::compareTo).isEqualTo(valueOf(100));
-        assertThat(debtor.getBalance()).usingComparator(BigDecimal::compareTo).isEqualTo(valueOf(0));
+        assertThat(creditor.getBalance()).usingComparator(BigDecimal::compareTo).isEqualTo(valueOf(0));
+        assertThat(debtor.getBalance()).usingComparator(BigDecimal::compareTo).isEqualTo(valueOf(100));
     }
 
 }
